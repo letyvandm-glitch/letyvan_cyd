@@ -24,7 +24,7 @@ using namespace fs;
 // ── Config réseau ───────────────────────────────────────────────
 #define WIFI_SSID       "RDC-2.4G"
 #define WIFI_PASS       "Los_Murcianos25"
-#define PC_AGENT_HOST   "192.168.001.051"  // patché par l'installateur
+#define PC_AGENT_HOST   "192.168.001.050"  // mini-i5 (CYD-1 .10)
 #define PC_AGENT_PORT   8765
 // IPs de démarrage (seeds) — la découverte automatique prend le relais
 #define SEED_IP_1       "192.168.1.10"
