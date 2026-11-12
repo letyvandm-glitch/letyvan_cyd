@@ -1271,9 +1271,9 @@ void fetchLAN() {
   http.setTimeout(5000);
   int code = http.GET();
   if (code == 200) {
-    String body = http.getString();
-    StaticJsonDocument<8192> doc;
-    if (!deserializeJson(doc, body)) {
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, http.getStream());
+    if (!err) {
       JsonArray arr = doc.as<JsonArray>();
       int n = 0;
       for (JsonObject d : arr) {
@@ -1289,6 +1289,7 @@ void fetchLAN() {
   }
   http.end();
 }
+
 void taskFetch(void*) {
   for (;;) {
     if (WiFi.status() == WL_CONNECTED) {
