@@ -260,7 +260,7 @@ void drawTabs() {
     bool act = (i == currentPage);
     int x = i * tw;
     tft.fillRect(x, 0, tw, TAB_H, act ? COL_TAB_ACT : COL_TAB_BG);
-    tft.drawRect(x, 0, tw, TAB_H, act ? COL_CPU : COL_LINE);
+    if (act) tft.drawFastHLine(x, TAB_H - 2, tw, COL_CPU);
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(act ? COL_CPU : COL_DIM, act ? COL_TAB_ACT : COL_TAB_BG);
     tft.setTextSize(1);
@@ -1182,7 +1182,7 @@ void fetchWeather() {
       flt["weather"][d]["hourly"][4]["windspeedKmph"] = true;
     }
 
-    StaticJsonDocument<4096> doc;
+    JsonDocument doc;
     if (!deserializeJson(doc, body, DeserializationOption::Filter(flt))) {
       WxData tmp;
       JsonObject cc = doc["current_condition"][0];
