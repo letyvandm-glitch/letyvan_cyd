@@ -186,7 +186,7 @@ static const char* workerSuffix() {
 #define IV_WX    300000UL
 #define IV_NET   600000UL   // stats réseau BTC toutes les 10 min
 
-unsigned long tMiner = 0, tWx = 0, tNet = 0, tLAN = 0;
+unsigned long tMiner = 0, tWx = 0, tNet = 0, tLAN = (unsigned long)-IV_LAN;
 
 // ── Serial PC (USB) ─────────────────────────────────────────────
 String _serialBuf = "";
@@ -673,65 +673,97 @@ static void drawMinerCard(MinerDev& d, int y0, bool isLocal) {
 }
 
 void drawPageScan() {
-  char buf[48];
-  const int HEAD_H = 20;
-  const int LIST_Y = BODY_Y + HEAD_H + 1;
-  const int ROW_H  = 18;
-  const int MAX_ROWS = (SCR_H - LIST_Y) / ROW_H;
-  const int LIST_W  = (lanCount > MAX_ROWS) ? SCR_W - 14 : SCR_W;
+  char buf[32];
+  const int Y0      = BODY_Y;
+  const int HEAD_H  = 14;
+  const int COLH_H  = 14;
+  const int LIST_Y  = Y0 + HEAD_H + COLH_H;  // 51
+  const int ROW_H   = 16;
+  const int SB_X    = 305;
+  const int MAX_ROWS = (SCR_H - LIST_Y) / ROW_H;  // 11
 
-  // En-tete : compteur + UP/DN du PC (positions fixes)
-  tft.fillRect(0, BODY_Y, SCR_W, HEAD_H, COL_BG);
-  tft.drawFastHLine(0, BODY_Y + HEAD_H, SCR_W, COL_LINE);
+  // couleurs lignes alternees (tres sombres)
+  const uint16_t ROW0 = 0x0082;   // #04101A aprox
+  const uint16_t ROW1 = COL_BG;   // 0x0000
+  const uint16_t HEAD_BG = 0x0203; // #040E1A
+
+  // ── Entete ──
+  tft.fillRect(0, Y0, SCR_W, HEAD_H, HEAD_BG);
   tft.setTextSize(1);
-  if (pc.ok) {
-    tft.setTextDatum(MR_DATUM);
-    tft.setTextColor(COL_GPU, COL_BG);
-    if (pc.net_dn >= 1024) snprintf(buf, sizeof(buf), "DN %.1fMB", pc.net_dn/1024.f);
-    else                   snprintf(buf, sizeof(buf), "DN %.0fKB", pc.net_dn);
-    tft.drawString(buf, 316, BODY_Y + HEAD_H/2 + 1);
-    tft.setTextColor(COL_NET, COL_BG);
-    if (pc.net_up >= 1024) snprintf(buf, sizeof(buf), "UP %.1fMB", pc.net_up/1024.f);
-    else                   snprintf(buf, sizeof(buf), "UP %.0fKB", pc.net_up);
-    tft.drawString(buf, 236, BODY_Y + HEAD_H/2 + 1);
-  }
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(COL_NET, HEAD_BG);
+  tft.drawString("LAN SCAN", 4, Y0 + HEAD_H/2);
+  int okCnt = 0;
+  for (int i = 0; i < lanCount; i++) if (lanDevs[i].ok) okCnt++;
+  snprintf(buf, sizeof(buf), "%d ap  %d ok", lanCount, okCnt);
+  tft.setTextDatum(MR_DATUM);
+  tft.setTextColor(COL_DIM, HEAD_BG);
+  tft.drawString(buf, SB_X - 2, Y0 + HEAD_H/2);
+  tft.drawFastHLine(0, Y0 + HEAD_H, SB_X, COL_LINE);
+
+  // ── En-tetes colonnes ──
+  int HY = Y0 + HEAD_H + COLH_H/2;
+  tft.fillRect(0, Y0 + HEAD_H, SB_X, COLH_H, COL_BG);
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(COL_DIM, COL_BG);
-  snprintf(buf, sizeof(buf), "%d appareils", lanCount);
-  tft.drawString(buf, 4, BODY_Y + HEAD_H/2 + 1);
+  tft.drawString("IP", 4, HY);
+  tft.drawString("HOSTNAME", 100, HY);
+  tft.setTextDatum(MC_DATUM);
+  tft.drawString("T", 256, HY);
+  tft.drawString("ST", 280, HY);
+  tft.drawFastHLine(0, Y0 + HEAD_H + COLH_H, SB_X, COL_LINE);
 
-  // Liste appareils : redessinage ligne par ligne (anti-flash)
+  // ── Lignes appareils ──
   for (int i = 0; i < MAX_ROWS; i++) {
-    int y = LIST_Y + i * ROW_H;
-    tft.fillRect(0, y, LIST_W, ROW_H - 1, COL_BG);
+    int ry  = LIST_Y + i * ROW_H;
+    uint16_t bg = (i % 2 == 0) ? ROW0 : ROW1;
+    tft.fillRect(0, ry, SB_X, ROW_H, bg);
     int idx = scanScroll + i;
     if (idx >= lanCount) continue;
     LanDevice& d = lanDevs[idx];
-    int ty = y + ROW_H/2;
-    // W=wifi / E=ethernet
+    int ty = ry + ROW_H / 2;
+    uint16_t iCol = d.ok ? COL_TEXT : COL_DIM;
+
+    // IP
     tft.setTextDatum(ML_DATUM);
-    tft.setTextSize(1);
-    tft.setTextColor(d.wifi ? COL_NET : COL_VRAM, COL_BG);
-    tft.drawString(d.wifi ? "W" : "E", 2, ty);
-    // voyant (cercle plein)
-    tft.fillCircle(14, ty, 4, d.ok ? COL_OK : COL_WARN);
-    // IP (position fixe x=22)
-    tft.setTextColor(COL_TEXT, COL_BG);
-    tft.drawString(d.ip, 22, ty);
-    // hostname
-    if (d.name[0] != 0) {
-      tft.setTextColor(COL_DIM, COL_BG);
-      tft.drawString(d.name, 108, ty);
-    }
+    tft.setTextColor(iCol, bg);
+    tft.drawString(d.ip, 4, ty);
+
+    // Hostname (tronque a 13 cars)
+    char hbuf[15];
+    strncpy(hbuf, d.name, 14); hbuf[14] = 0;
+    if (d.name[13] != 0 && d.name[13] != '\0' && strlen(d.name) > 13) hbuf[13] = '>';
+    tft.setTextColor(iCol, bg);
+    tft.drawString(hbuf, 100, ty);
+
+    // Type W ou E
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(d.wifi ? COL_VRAM : COL_NET, bg);
+    tft.drawString(d.wifi ? "W" : "E", 256, ty);
+
+    // Dot statut
+    tft.fillCircle(272, ty, 3, d.ok ? COL_OK : COL_DIM);
+    // ok/ko texte
+    tft.setTextDatum(ML_DATUM);
+    tft.setTextColor(d.ok ? COL_OK : COL_DIM, bg);
+    tft.drawString(d.ok ? "ok" : "ko", 279, ty);
   }
 
-  // Scrollbar verticale si necessite
+  // ── Scrollbar ──
+  int sbH = SCR_H - LIST_Y;
+  tft.fillRect(SB_X, LIST_Y, SCR_W - SB_X, sbH, ROW1);
+  tft.drawFastVLine(SB_X, Y0, SCR_H - Y0, COL_LINE);
   if (lanCount > MAX_ROWS) {
-    tft.fillRect(SCR_W - 14, LIST_Y, 14, SCR_H - LIST_Y, COL_PANEL);
-    int barH = max(10, (SCR_H - LIST_Y) * MAX_ROWS / lanCount);
-    int barRange = SCR_H - LIST_Y - barH;
-    int barY = LIST_Y + barRange * scanScroll / max(1, lanCount - MAX_ROWS);
-    tft.fillRect(SCR_W - 10, barY, 6, barH, COL_DIM);
+    int barH = max(10, sbH * MAX_ROWS / lanCount);
+    int barY = LIST_Y + (sbH - barH) * scanScroll / max(1, lanCount - MAX_ROWS);
+    tft.fillRect(SB_X + 2, barY, 6, barH, COL_DIM);
+  }
+
+  // ── Hint scroll si plus de lignes que visible ──
+  if (lanCount > MAX_ROWS) {
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(COL_DIM, COL_BG);
+    tft.drawString("^ v scroll", 152, SCR_H - 4);
   }
 }
 
