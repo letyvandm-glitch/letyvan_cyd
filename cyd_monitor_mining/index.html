@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NM Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{--c:#00e8ff;--p:#ff006e;--g:#00ff88;--o:#ffa500;--bg:#020c18;--pan:#030f20;--bd:rgba(0,232,255,0.15)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--c);font-family:'Orbitron',monospace;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.04) 2px,rgba(0,0,0,0.04) 4px);pointer-events:none;z-index:999}
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:7px 16px;border-bottom:1px solid var(--bd);background:rgba(0,8,20,0.95);flex-shrink:0}
+.hdr-title{font-size:12px;font-weight:900;letter-spacing:4px;text-shadow:0 0 10px var(--c)}
+.hdr-mid{font-family:'Share Tech Mono',monospace;font-size:10px;opacity:.6;display:flex;gap:12px;align-items:center}
+.hdr-time{font-size:11px;letter-spacing:2px;color:var(--p)}
+.body{flex:1;display:grid;grid-template-columns:180px 1fr 180px;grid-template-rows:1fr 1fr;gap:1px;background:var(--bd);overflow:hidden}
+.pan{background:var(--pan);padding:14px;display:flex;flex-direction:column;gap:8px;position:relative;overflow:hidden}
+.pan::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--c),transparent)}
+.pan-center{grid-column:2;grid-row:1/3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.lbl{font-size:8px;letter-spacing:2px;opacity:.5;text-transform:uppercase}
+.val{font-size:16px;font-weight:700}
+.sbar-wrap{display:flex;flex-direction:column;gap:3px}
+.sbar{height:5px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden}
+.sbar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--g),var(--c));box-shadow:0 0 6px var(--c);transition:width 1s}
+.wifi{display:flex;align-items:flex-end;gap:2px;height:16px}
+.wifi span{background:var(--c);border-radius:1px;width:4px;opacity:.15;transition:opacity .5s}
+.wifi span.on{opacity:1;box-shadow:0 0 4px var(--c)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--g);box-shadow:0 0 8px var(--g);animation:blink 2s infinite;display:inline-block}
+.dot.off{background:#f33;box-shadow:0 0 8px #f33;animation:none}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+.mini-chart{width:100%;height:40px;border-radius:3px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.mgauge{display:flex;flex-direction:column;align-items:center;gap:3px}
+.sep{height:1px;background:var(--bd)}
+.ftr{padding:5px 16px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-family:'Share Tech Mono',monospace;font-size:9px;opacity:.4;flex-shrink:0;background:rgba(0,8,20,.95)}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="hdr-title">NM // NODE MONITOR</div>
+  <div class="hdr-mid">
+    <span class="dot" id="dot"></span>
+    <span id="hstatus">CONNECTING</span>
+    <span id="hhost" style="color:var(--c)">---</span>
+  </div>
+  <div class="hdr-time" id="htime">--:--:--</div>
+</div>
+<div class="body">
+  <!-- TOP LEFT -->
+  <div class="pan">
+    <div class="lbl">Hashrate</div>
+    <div id="hr-val" style="font-size:22px;font-weight:900;color:var(--o);text-shadow:0 0 10px var(--o)">--</div>
+    <div class="lbl" style="margin-top:4px">History (60s)</div>
+    <canvas class="mini-chart" id="chart"></canvas>
+    <div class="sbar-wrap" style="margin-top:4px">
+      <div style="display:flex;justify-content:space-between"><div class="lbl">Efficiency</div><div class="lbl" id="eff-lbl">--%</div></div>
+      <div class="sbar"><div class="sbar-fill" id="eff-bar" style="width:0%"></div></div>
+    </div>
+  </div>
+  <!-- CENTER DIAL -->
+  <div class="pan pan-center">
+    <canvas id="dial" width="260" height="260"></canvas>
+    <div style="text-align:center;margin-top:-8px">
+      <div class="lbl" style="letter-spacing:3px">SHA256d // MONERO OCEAN</div>
+    </div>
+    <div style="display:flex;gap:24px;margin-top:4px">
+      <div style="text-align:center"><div class="lbl">Shares OK</div><div class="val" id="ok" style="color:var(--g)">--</div></div>
+      <div style="text-align:center"><div class="lbl">Rejected</div><div class="val" id="ko" style="color:var(--p)">--</div></div>
+      <div style="text-align:center"><div class="lbl">Uptime</div><div class="val" id="up" style="font-size:13px">--</div></div>
+    </div>
+    <div style="font-family:'Share Tech Mono',monospace;font-size:10px;opacity:.5" id="best-diff">Best diff: --</div>
+  </div>
+  <!-- TOP RIGHT -->
+  <div class="pan">
+    <div class="lbl">WiFi Signal</div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="wifi" id="wifi-bars">
+        <span style="height:4px"></span><span style="height:7px"></span>
+        <span style="height:11px"></span><span style="height:16px"></span>
+      </div>
+      <div id="rssi-val" style="font-size:13px;font-weight:700">-- dBm</div>
+    </div>
+    <div class="sep"></div>
+    <div style="display:flex;flex-direction:column;gap:6px;font-family:'Share Tech Mono',monospace;font-size:11px">
+      <div style="display:flex;justify-content:space-between"><span style="opacity:.5">IP</span><span id="inf-ip" style="color:var(--c)">---</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="opacity:.5">HOST</span><span id="inf-host" style="color:var(--c)">---</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="opacity:.5">FW</span><span id="inf-fw" style="color:var(--c)">---</span></div>
+    </div>
+    <div class="sep"></div>
+    <div class="lbl">Pool</div>
+    <div id="inf-pool" style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--c);word-break:break-all">---</div>
+    <div style="display:flex;align-items:center;gap:5px;margin-top:2px">
+      <div class="dot" id="pool-dot"></div>
+      <div class="lbl" id="pool-status" style="opacity:1">---</div>
+    </div>
+  </div>
+  <!-- BOTTOM LEFT -->
+  <div class="pan">
+    <div class="lbl">Total Hashes</div>
+    <div class="val" id="total-h" style="font-size:14px">--</div>
+    <div class="sep"></div>
+    <div class="lbl">Pool Difficulty</div>
+    <div class="val" id="pool-diff" style="font-size:13px">--</div>
+    <div class="sep"></div>
+    <div class="lbl">Last Share</div>
+    <div class="val" id="last-share" style="font-size:12px">--</div>
+  </div>
+  <!-- BOTTOM RIGHT -->
+  <div class="pan">
+    <div class="row2">
+      <div class="mgauge">
+        <svg width="70" height="70" viewBox="0 0 70 70">
+          <circle cx="35" cy="35" r="28" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="7"/>
+          <circle cx="35" cy="35" r="28" fill="none" stroke="var(--c)" stroke-width="7"
+            stroke-linecap="round" stroke-dasharray="175.9" stroke-dashoffset="175.9"
+            id="g-hr" transform="rotate(-225 35 35)" style="transition:stroke-dashoffset 1s"/>
+        </svg>
+        <div class="lbl" style="margin-top:-8px">HR %</div>
+        <div class="val" id="g-hr-val" style="font-size:13px">--%</div>
+      </div>
+      <div class="mgauge">
+        <svg width="70" height="70" viewBox="0 0 70 70">
+          <circle cx="35" cy="35" r="28" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="7"/>
+          <circle cx="35" cy="35" r="28" fill="none" stroke="var(--p)" stroke-width="7"
+            stroke-linecap="round" stroke-dasharray="175.9" stroke-dashoffset="175.9"
+            id="g-rej" transform="rotate(-225 35 35)" style="transition:stroke-dashoffset 1s"/>
+        </svg>
+        <div class="lbl" style="margin-top:-8px">Reject %</div>
+        <div class="val" id="g-rej-val" style="font-size:13px;color:var(--p)">--%</div>
+      </div>
+    </div>
+    <div class="sep"></div>
+    <div class="lbl">Model</div>
+    <div class="val" id="hw-model" style="font-size:11px">NMMiner CYD</div>
+    <div class="lbl" style="margin-top:4px">Chip</div>
+    <div style="font-family:'Share Tech Mono',monospace;font-size:10px;opacity:.6">ESP32 // 240MHz</div>
+  </div>
+</div>
+<div class="ftr">
+  <span>ESP32 CYD 2.8" // XTensa LX6 240MHz</span>
+  <span id="poll-ts">--</span>
+</div>
+<script>
+const CIRC=175.9,MAX_H=60,MAX_MHS=0.02;
+const hist=[];
+let prevOk=0,lastShareTime=null;
+
+function fmtHR(mhs){
+  const h=mhs*1e6;
+  if(h>=1e6)return(h/1e6).toFixed(2)+' MH/s';
+  if(h>=1e3)return(h/1e3).toFixed(1)+' kH/s';
+  return h.toFixed(0)+' H/s';
+}
+function fmtUp(s){
+  if(!s&&s!==0)return'--';
+  const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60);
+  if(d>0)return d+'d '+h+'h';
+  if(h>0)return h+'h '+String(m).padStart(2,'0')+'m';
+  return m+'m '+String(s%60).padStart(2,'0')+'s';
+}
+function fmtH(n){
+  if(!n)return'--';
+  if(n>=1e9)return(n/1e9).toFixed(2)+' GH';
+  if(n>=1e6)return(n/1e6).toFixed(2)+' MH';
+  if(n>=1e3)return(n/1e3).toFixed(1)+' kH';
+  return n+' H';
+}
+function gauge(id,vid,pct){
+  document.getElementById(id).style.strokeDashoffset=CIRC-(pct/100)*CIRC*0.75;
+  document.getElementById(vid).textContent=Math.round(pct)+'%';
+}
+function drawDial(mhs,on){
+  const c=document.getElementById('dial'),ctx=c.getContext('2d');
+  const W=c.width,H=c.height,cx=W/2,cy=H/2,R=W*0.40;
+  ctx.clearRect(0,0,W,H);
+  const SA=Math.PI*0.75,EA=Math.PI*2.25,TA=EA-SA;
+  const fr=Math.min((mhs||0)/MAX_MHS,1);
+  for(let i=0;i<=20;i++){
+    const a=SA+(i/20)*TA,m=i%5===0;
+    ctx.beginPath();
+    ctx.moveTo(cx+Math.cos(a)*(R+2),cy+Math.sin(a)*(R+2));
+    ctx.lineTo(cx+Math.cos(a)*(R+(m?12:7)),cy+Math.sin(a)*(R+(m?12:7)));
+    ctx.strokeStyle=m?'#00e8ff':'rgba(255,255,255,0.2)';
+    ctx.lineWidth=m?1.5:0.8;ctx.stroke();
+  }
+  ctx.font='8px Orbitron,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle='rgba(0,232,255,0.5)';
+  for(let i=0;i<=4;i++){const a=SA+(i/4)*TA,lr=R+22;ctx.fillText(i*5+'k',cx+Math.cos(a)*lr,cy+Math.sin(a)*lr);}
+  ctx.beginPath();ctx.arc(cx,cy,R,SA,EA);
+  ctx.strokeStyle='rgba(255,255,255,0.07)';ctx.lineWidth=12;ctx.lineCap='butt';ctx.stroke();
+  ctx.beginPath();ctx.arc(cx,cy,R+16,SA,EA);
+  ctx.strokeStyle='rgba(255,0,110,0.15)';ctx.lineWidth=3;ctx.stroke();
+  if(on&&mhs>0){
+    ctx.beginPath();ctx.arc(cx,cy,R,SA,SA+fr*TA);
+    ctx.strokeStyle='#00e8ff';ctx.lineWidth=12;ctx.lineCap='round';
+    ctx.shadowColor='#00e8ff';ctx.shadowBlur=20;ctx.stroke();ctx.shadowBlur=0;
+    ctx.beginPath();ctx.arc(cx,cy,R+16,SA,SA+fr*TA*0.95);
+    ctx.strokeStyle='#ff006e';ctx.lineWidth=3;ctx.lineCap='round';
+    ctx.shadowColor='#ff006e';ctx.shadowBlur=10;ctx.stroke();ctx.shadowBlur=0;
+  }
+  const txt=on?fmtHR(mhs||0):'OFFLINE';
+  ctx.fillStyle=on?'#ffa500':'#f33';
+  ctx.font='bold '+(on?26:16)+'px Orbitron,monospace';
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=15;
+  ctx.fillText(typeof txt==='string'?txt:txt,cx,cy-(on?10:0));
+  ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(255,255,255,0.3)';ctx.font='8px Share Tech Mono,monospace';
+  ctx.fillText('SHA256d',cx,cy+32);
+}
+function drawChart(h){
+  const c=document.getElementById('chart');
+  const W=c.offsetWidth||160,H=c.offsetHeight||40;
+  c.width=W;c.height=H;
+  const ctx=c.getContext('2d');ctx.clearRect(0,0,W,H);
+  if(h.length<2)return;
+  const mx=Math.max(...h,0.001);
+  const pts=h.map((v,i)=>[i/(MAX_H-1)*W,H-(v/mx)*H*0.85-2]);
+  ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));
+  ctx.strokeStyle='#00e8ff';ctx.lineWidth=1.5;ctx.shadowColor='#00e8ff';ctx.shadowBlur=5;ctx.stroke();ctx.shadowBlur=0;
+  ctx.lineTo(pts[pts.length-1][0],H);ctx.lineTo(0,H);ctx.closePath();
+  ctx.fillStyle='rgba(0,232,255,0.1)';ctx.fill();
+}
+function setWifi(rssi){
+  const bars=document.querySelectorAll('#wifi-bars span');
+  [-90,-80,-70,-50].forEach((t,i)=>bars[i].classList.toggle('on',rssi>=t));
+  document.getElementById('rssi-val').textContent=rssi?rssi+' dBm':'-- dBm';
+}
+function tick(){
+  const now=new Date();
+  document.getElementById('htime').textContent=now.toLocaleTimeString('fr-FR',{hour12:false});
+  fetch('/api/system/info')
+    .then(r=>r.json())
+    .then(d=>{
+      const id=d.identity||{},mn=d.miner||{},st=d.stratum||{},wf=d.wifi||{};
+      const on=st.connected!==false;
+      document.getElementById('dot').className='dot'+(on?'':' off');
+      document.getElementById('hstatus').textContent=on?'MINING':'POOL DISC.';
+      document.getElementById('hhost').textContent=id.hostName||'---';
+      const mhs=mn.hashRate||0;
+      drawDial(mhs,true);
+      hist.push(mhs);if(hist.length>MAX_H)hist.shift();
+      drawChart(hist);
+      document.getElementById('hr-val').textContent=fmtHR(mhs);
+      const ok=mn.sAccepted||0,ko=mn.sRejected||0,tot=ok+ko;
+      document.getElementById('ok').textContent=ok;
+      document.getElementById('ko').textContent=ko;
+      document.getElementById('up').textContent=fmtUp(mn.uptimeSeconds);
+      document.getElementById('best-diff').textContent='Best diff: '+(mn.bestDiffEver||'--');
+      const eff=tot>0?ok/tot*100:100;
+      document.getElementById('eff-lbl').textContent=Math.round(eff)+'%';
+      document.getElementById('eff-bar').style.width=eff+'%';
+      gauge('g-hr','g-hr-val',Math.min(mhs/MAX_MHS*100,100));
+      gauge('g-rej','g-rej-val',Math.min(tot>0?ko/tot*500:0,100));
+      document.getElementById('inf-ip').textContent=id.ip||location.hostname;
+      document.getElementById('inf-host').textContent=id.hostName||'---';
+      document.getElementById('inf-fw').textContent=id.fwVersion||'---';
+      document.getElementById('inf-pool').textContent=st.url||'---';
+      document.getElementById('pool-dot').className='dot'+(on?'':' off');
+      document.getElementById('pool-status').textContent=on?'CONNECTED':'DISCONNECTED';
+      setWifi(wf.rssi||0);
+      document.getElementById('total-h').textContent=fmtH(mn.totalHashes);
+      document.getElementById('pool-diff').textContent=mn.bestDiffEver||'--';
+      if(ok>prevOk){lastShareTime=now;prevOk=ok;}
+      document.getElementById('last-share').textContent=lastShareTime?
+        (Math.round((now-lastShareTime)/1000)+'s ago'):'--';
+      document.getElementById('poll-ts').textContent=now.toLocaleTimeString('fr-FR',{hour12:false});
+    })
+    .catch(()=>{
+      document.getElementById('hstatus').textContent='NO SIGNAL';
+      document.getElementById('dot').className='dot off';
+      drawDial(0,false);
+    });
+}
+tick();setInterval(tick,3000);
+</script>
+</body>
+</html>

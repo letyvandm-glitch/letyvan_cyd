@@ -1,0 +1,8 @@
+*.bin
+*.merged.bin
+*.bootloader.bin
+*.partitions.bin
+build/
+__pycache__/
+*.pyc
+.env
