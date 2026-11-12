@@ -156,6 +156,7 @@ BtcNetwork btcnet;
 struct LanDevice { char ip[16]; char name[22]; bool wifi; bool ok; };
 LanDevice lanDevs[LAN_MAX];
 int       lanCount = 0;
+int       lanHttpCode = 0;  // debug: dernier HTTP code
 #define IV_LAN 30000UL
 #define LAN_AGENT_HOST "192.168.1.50"
 uint8_t    g_pcConn = 0;    // 0=inconnu 1=USB 2=WiFi
@@ -695,9 +696,14 @@ void drawPageScan() {
   tft.drawString("LAN SCAN", 4, Y0 + HEAD_H/2);
   int okCnt = 0;
   for (int i = 0; i < lanCount; i++) if (lanDevs[i].ok) okCnt++;
-  snprintf(buf, sizeof(buf), "%d ap  %d ok", lanCount, okCnt);
+  if (lanCount > 0)
+    snprintf(buf, sizeof(buf), "%d ap  %d ok", lanCount, okCnt);
+  else if (lanHttpCode != 0)
+    snprintf(buf, sizeof(buf), "HTTP %d", lanHttpCode);
+  else
+    snprintf(buf, sizeof(buf), "attente...");
   tft.setTextDatum(MR_DATUM);
-  tft.setTextColor(COL_DIM, HEAD_BG);
+  tft.setTextColor(lanCount > 0 ? COL_DIM : COL_WARN, HEAD_BG);
   tft.drawString(buf, SB_X - 2, Y0 + HEAD_H/2);
   tft.drawFastHLine(0, Y0 + HEAD_H, SB_X, COL_LINE);
 
@@ -1269,19 +1275,21 @@ void fetchLAN() {
   snprintf(url, sizeof(url), "http://%s:8765/network", LAN_AGENT_HOST);
   http.begin(url);
   http.setTimeout(5000);
-  int code = http.GET();
-  if (code == 200) {
+  lanHttpCode = http.GET();
+  if (lanHttpCode == 200) {
+    String body = http.getString();
     JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, http.getStream());
+    DeserializationError err = deserializeJson(doc, body);
     if (!err) {
-      JsonArray arr = doc.as<JsonArray>();
       int n = 0;
-      for (JsonObject d : arr) {
+      for (JsonObject d : doc.as<JsonArray>()) {
         if (n >= LAN_MAX) break;
-        strncpy(lanDevs[n].ip,   d["ip"]   | "", 15);
-        strncpy(lanDevs[n].name, d["name"] | "", 21);
+        const char* ip   = d["ip"]   | "";
+        const char* name = d["name"] | "";
+        strncpy(lanDevs[n].ip,   ip,   15); lanDevs[n].ip[15]   = 0;
+        strncpy(lanDevs[n].name, name, 21); lanDevs[n].name[21] = 0;
         lanDevs[n].wifi = d["wifi"] | false;
-        lanDevs[n].ok   = d["ok"]   | true;
+        lanDevs[n].ok   = d["ok"]   | false;
         n++;
       }
       lanCount = n;
