@@ -201,62 +201,49 @@ int      histIdx = 0;
 // Dessin primitives
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-void drawArc(int cx, int cy, int r, int thick, float pct, uint16_t color) {
-  // Arc de jauge : 210° à -30° (270° d'ouverture)
-  float startA = 210.0f;
-  float span   = 270.0f;
-  float endA   = startA - span * constrain(pct, 0.f, 1.f);
-  for (int a = (int)endA; a <= (int)startA; a++) {
-    float rad = a * DEG_TO_RAD;
-    float c = cosf(rad), s = -sinf(rad);
-    for (int t = 0; t < thick; t++) {
+// Arc 240 deg conforme preview HTML (startA=225 std, lw proportionnel)
+void drawArc(int cx, int cy, int r, int lw, float pct, uint16_t color) {
+  pct = constrain(pct, 0.f, 1.f);
+  float arcSpan = 240.0f * pct;
+  for (float a = 0.0f; a <= 240.0f; a += 1.0f) {
+    uint16_t col = (a <= arcSpan + 0.5f) ? color : COL_TRACK;
+    float rad = (225.0f + a) * DEG_TO_RAD;
+    float cs = cosf(rad), sn = -sinf(rad);
+    for (int t = 0; t < lw; t++) {
       int rr = r - t;
-      tft.drawPixel(cx + rr * c, cy + rr * s, color);
+      tft.drawPixel(cx + (int)(rr * cs), cy + (int)(rr * sn), col);
     }
   }
 }
 
 void drawGauge(int cx, int cy, int r, float pct, uint16_t color, const char* label, const char* val) {
-  // Piste
-  drawArc(cx, cy, r, 4, 1.0f, COL_TRACK);
-  // Arc valeur
-  drawArc(cx, cy, r, 4, pct, color);
-  // Centre : label + valeur
+  int lw = max(2, r * 11 / 100);
+  drawArc(cx, cy, r, lw, pct, color);
   tft.setTextDatum(MC_DATUM);
-  tft.setTextColor(COL_DIM, COL_BG);
-  tft.setTextSize(1);
+  tft.setTextColor(COL_DIM, COL_BG); tft.setTextSize(1);
   tft.drawString(label, cx, cy - 6);
-  tft.setTextColor(color, COL_BG);
-  tft.setTextSize(1);
-  tft.setFreeFont(NULL);
+  tft.setTextColor(color, COL_BG); tft.setTextSize(1);
   tft.drawString(val, cx, cy + 6);
 }
 
-// Jauge TURZX : donut coloré avec halo et valeur intérieure
+// drawGaugeTX : arc fin + texte centré, fidèle design HTML approuvé
+// lw = max(2, r*11/100)  — épaisseur proportionnelle comme JS preview
 void drawGaugeTX(int cx, int cy, int r, float pct, uint16_t color,
                  const char* label, const char* val, int vSize) {
-  // Halo extérieur (arc fin atténué)
-  uint16_t dim = ((color >> 1) & 0x7BEF);
-  drawArc(cx, cy, r + 4, 2, pct, dim);
-  // Cercle de fond décoratif
-  tft.drawCircle(cx, cy, r + 6, 0x0841);
-  tft.drawCircle(cx, cy, r - 11, 0x0841);
-  // Piste grise
-  drawArc(cx, cy, r, 7, 1.0f, COL_TRACK);
-  // Arc valeur coloré
-  drawArc(cx, cy, r, 7, pct, color);
-  // Trou intérieur noir
-  tft.fillCircle(cx, cy, r - 9, COL_BG);
-  // Valeur (grand)
+  int lw = max(2, r * 11 / 100);
+  drawArc(cx, cy, r, lw, pct, color);
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(color, COL_BG);
   tft.setTextSize(vSize);
-  tft.drawString(val, cx, cy - (vSize >= 2 ? 5 : 0));
-  // Label (petit, dim)
-  tft.setTextSize(1);
-  tft.setTextColor(COL_DIM, COL_BG);
-  tft.drawString(label, cx, cy + (vSize >= 2 ? 14 : 9));
+  tft.drawString(val, cx, cy - 1);
+  if (label && label[0]) {
+    int vp = (vSize == 1) ? 7 : (vSize == 2 ? 11 : 17);
+    tft.setTextSize(1);
+    tft.setTextColor(COL_DIM, COL_BG);
+    tft.drawString(label, cx, cy + vp / 2 + 2);
+  }
 }
+
 
 void drawBar(int x, int y, int w, int h, float pct, uint16_t color) {
   tft.drawRect(x, y, w, h, COL_TRACK);
