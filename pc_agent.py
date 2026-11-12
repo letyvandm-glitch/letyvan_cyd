@@ -312,22 +312,56 @@ def collect_loop():
 
 # ── Serveur HTTP ──────────────────────────────────────────────────
 
+
+def _get_lan_devices():
+    """Lit /proc/net/arp et retourne la liste des devices réseau visibles."""
+    import socket
+    devices = {}
+    try:
+        with open("/proc/net/arp") as f:
+            for line in f.readlines()[1:]:
+                parts = line.split()
+                if len(parts) < 6:
+                    continue
+                ip    = parts[0]
+                flags = parts[2]
+                dev   = parts[5]
+                if flags == "0x0":
+                    continue  # entrée incomplète
+                wifi = dev.startswith("wl")
+                # Résoudre le hostname (best effort)
+                try:
+                    name = socket.gethostbyaddr(ip)[0].split(".")[0]
+                except Exception:
+                    name = "-"
+                key = ip
+                if key not in devices:
+                    devices[key] = {"ip": ip, "name": name, "wifi": wifi, "ok": True}
+    except Exception:
+        pass
+    return sorted(devices.values(), key=lambda d: list(map(int, d["ip"].split("."))))
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass   # silencieux
 
-    def do_GET(self):
-        if self.path != "/stats":
-            self.send_response(404); self.end_headers(); return
-        with _lock:
-            data = dict(_latest)
-        body = json.dumps(data).encode()
+    def _send_json(self, body_bytes):
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(len(body_bytes)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        self.wfile.write(body)
+        self.wfile.write(body_bytes)
+
+    def do_GET(self):
+        if self.path == "/stats":
+            with _lock:
+                data = dict(_latest)
+            self._send_json(json.dumps(data).encode())
+        elif self.path == "/network":
+            self._send_json(json.dumps(_get_lan_devices()).encode())
+        else:
+            self.send_response(404); self.end_headers()
 
 
 def _serial_worker(port):
