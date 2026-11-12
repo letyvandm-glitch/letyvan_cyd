@@ -4,7 +4,7 @@ CYD Monitor — Agent système (Windows / Linux Debian)
 Expose les métriques PC via HTTP sur :8765/stats
 L'ESP32 CYD poll cet endpoint toutes les 5s.
 """
-import sys, os, time, platform, subprocess, json, threading
+import sys, os, time, platform, subprocess, json, threading, socket, concurrent.futures
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 try:
@@ -300,9 +300,19 @@ def collect_loop():
                 "vram_used": round(gpu["vram_used"], 0),
                 "vram_total":round(gpu["vram_total"], 0),
                 **disk,
+                "os_type":  "linux" if IS_LINUX else "windows",
                 "net_up":   round(net_u, 1),
                 "net_down": round(net_d, 1),
             }
+            # Swap Linux
+            if IS_LINUX:
+                try:
+                    swp = psutil.swap_memory()
+                    stats["swap_pct"]   = round(swp.percent, 1)
+                    stats["swap_used"]  = round(swp.used  / 1e9, 2)
+                    stats["swap_total"] = round(swp.total / 1e9, 1)
+                except Exception:
+                    pass
             with _lock:
                 _latest.update(stats)
         except Exception as e:
@@ -310,58 +320,113 @@ def collect_loop():
         time.sleep(3)
 
 
+
+# ── Scan LAN ─────────────────────────────────────────────────────
+_lan_cache = []
+_lan_lock  = threading.Lock()
+
+def _is_wifi_iface(iface):
+    return os.path.isdir(f"/sys/class/net/{iface}/wireless")
+
+def _ping_one(ip):
+    try:
+        subprocess.run(["ping", "-c", "1", "-W", "0.3", "-q", ip],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1)
+    except Exception:
+        pass
+
+def _scan_lan():
+    ips = [f"192.168.1.{i}" for i in range(1, 255)]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as ex:
+        list(ex.map(_ping_one, ips))
+    devices = []
+    seen = set()
+    if IS_LINUX:
+        try:
+            out = subprocess.check_output(["ip", "neigh"], timeout=5, text=True)
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) < 4:
+                    continue
+                ip = parts[0]
+                state = parts[-1]
+                if state == "FAILED" or ip in seen:
+                    continue
+                iface = parts[2] if len(parts) > 2 else ""
+                wifi = _is_wifi_iface(iface)
+                seen.add(ip)
+                hostname = ""
+                try:
+                    hostname = socket.gethostbyaddr(ip)[0].split(".")[0]
+                except Exception:
+                    pass
+                devices.append({
+                    "ip":   ip,
+                    "name": hostname[:22],
+                    "wifi": wifi,
+                    "ok":   state in ("REACHABLE", "DELAY", "PROBE"),
+                })
+        except Exception as e:
+            print(f"[LAN] {e}")
+    try:
+        devices.sort(key=lambda d: [int(x) for x in d["ip"].split(".")])
+    except Exception:
+        pass
+    return devices
+
+def _lan_scan_loop():
+    global _lan_cache
+    while True:
+        try:
+            devs = _scan_lan()
+            with _lan_lock:
+                _lan_cache = devs
+            print(f"[LAN] {len(devs)} appareils")
+        except Exception as e:
+            print(f"[LAN] erreur: {e}")
+        time.sleep(60)
+
 # ── Serveur HTTP ──────────────────────────────────────────────────
 
 
 def _get_lan_devices():
-    """Lit /proc/net/arp et retourne la liste des devices réseau visibles."""
-    import socket
+    import socket as _sock
     devices = {}
     try:
         with open("/proc/net/arp") as f:
             for line in f.readlines()[1:]:
                 parts = line.split()
-                if len(parts) < 6:
-                    continue
-                ip    = parts[0]
-                flags = parts[2]
-                dev   = parts[5]
-                if flags == "0x0":
-                    continue  # entrée incomplète
+                if len(parts) < 6: continue
+                ip, flags, dev = parts[0], parts[2], parts[5]
+                if flags == "0x0": continue
                 wifi = dev.startswith("wl")
-                # Résoudre le hostname (best effort)
-                try:
-                    name = socket.gethostbyaddr(ip)[0].split(".")[0]
-                except Exception:
-                    name = "-"
-                key = ip
-                if key not in devices:
-                    devices[key] = {"ip": ip, "name": name, "wifi": wifi, "ok": True}
-    except Exception:
-        pass
+                try: name = _sock.gethostbyaddr(ip)[0].split(".")[0]
+                except: name = "-"
+                if ip not in devices:
+                    devices[ip] = {"ip": ip, "name": name, "wifi": wifi, "ok": True}
+    except Exception: pass
     return sorted(devices.values(), key=lambda d: list(map(int, d["ip"].split("."))))
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass   # silencieux
 
-    def _send_json(self, body_bytes):
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body_bytes)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(body_bytes)
-
     def do_GET(self):
-        if self.path == "/stats":
+        if self.path == "/network":
+            body = json.dumps(_get_lan_devices()).encode()
+        elif self.path == "/stats":
             with _lock:
                 data = dict(_latest)
-            self._send_json(json.dumps(data).encode())
-        elif self.path == "/network":
-            self._send_json(json.dumps(_get_lan_devices()).encode())
+            body = json.dumps(data).encode()
         else:
-            self.send_response(404); self.end_headers()
+            self.send_response(404); self.end_headers(); return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
 
 
 def _serial_worker(port):
@@ -410,7 +475,9 @@ if __name__ == "__main__":
 
     # Envoi série vers tous les CYD détectés automatiquement
     t_serial = threading.Thread(target=serial_scan_loop, daemon=True)
+    t_lan    = threading.Thread(target=_lan_scan_loop,    daemon=True)
     t_serial.start()
+    t_lan.start()
 
     # Serveur HTTP de diagnostic (facultatif)
     print(f"HTTP diagnostic : http://0.0.0.0:{HTTP_PORT}/stats")

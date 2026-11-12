@@ -1139,7 +1139,7 @@ void fetchWeather() {
       flt["weather"][d]["hourly"][4]["windspeedKmph"] = true;
     }
 
-    StaticJsonDocument<4096> doc;
+    StaticJsonDocument<8192> doc;
     if (!deserializeJson(doc, body, DeserializationOption::Filter(flt))) {
       WxData tmp;
       JsonObject cc = doc["current_condition"][0];
@@ -1240,7 +1240,7 @@ void fetchLAN() {
   int code = http.GET();
   if (code == 200) {
     String body = http.getString();
-    StaticJsonDocument<4096> doc;
+    StaticJsonDocument<8192> doc;
     if (!deserializeJson(doc, body)) {
       JsonArray arr = doc.as<JsonArray>();
       int n = 0;
